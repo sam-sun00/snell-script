@@ -3,9 +3,6 @@
 This repository contains Bash scripts for deploying, upgrading, and migrating a
 Snell server installation on a Linux host that uses `apt` and `systemd`.
 
-Additional project conversation context is kept in `Agent-Chat-History.md`. Use
-that file when reconstructing why the scripts were added or changed.
-
 ## Project History Context
 
 - The original deployment workflow was manual: install dependencies, download a
