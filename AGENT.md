@@ -113,6 +113,7 @@ Keep the existing Bash style unless there is a strong reason to change it:
   preserve the current port range unless asked otherwise.
 - Treat untracked or modified files as user work. Do not revert them unless the
   user explicitly asks.
+- Update `AGENT.md` as new features are added or more project history context is provided. 
 
 ## Validation Checklist
 
