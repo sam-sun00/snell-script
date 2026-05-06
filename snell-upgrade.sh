@@ -86,7 +86,7 @@ SNELL_URL="${SNELL_DOWNLOAD_BASE_URL}/${SNELL_ZIP}"
 WORKDIR="$(mktemp -d)"
 
 info "Downloading snell-server from $SNELL_URL..."
-wget --no-check-certificate -q --show-progress \
+wget -q --show-progress \
     -O "$WORKDIR/$SNELL_ZIP" \
     "$SNELL_URL" \
     || error "Download failed. Check the URL or network connectivity."

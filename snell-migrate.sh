@@ -54,9 +54,15 @@ backup_file() {
 
     if (( DRY_RUN )); then
         info "[dry-run] cp -p $source $backup"
+        if [[ "$source" == "$SNELL_CONF" ]]; then
+            info "[dry-run] chmod 600 $backup"
+        fi
         info "Backup would be saved to $backup"
     else
         cp -p "$source" "$backup"
+        if [[ "$source" == "$SNELL_CONF" ]]; then
+            chmod 600 "$backup"
+        fi
         info "Backup saved to $backup"
     fi
 }
