@@ -19,6 +19,8 @@ that file when reconstructing why the scripts were added or changed.
   `10000-40000` or the port supplied by `-p/--port`.
 - Deployment and upgrade were changed to derive the Snell archive name from the
   repo's `version` endpoint rather than hardcoding a single versioned zip URL.
+- Deployment configures kernel networking for new installs only: BBR congestion
+  control, `fq` as the default queue discipline, and TCP Fast Open value `3`.
 - `snell-upgrade.sh` was added for existing script-managed installations. It
   intentionally checks for an existing binary, config, and service before
   replacing only the binary, then reloads systemd and restarts the service.
@@ -31,8 +33,9 @@ that file when reconstructing why the scripts were added or changed.
 
 - `snell-deploy.sh`: first-time deployment script. It installs dependencies,
   downloads the Snell server binary for the version in `version`, creates
-  `/etc/snell/snell-server.conf`, writes the systemd service, enables the
-  service, and prints the generated connection details.
+  `/etc/snell/snell-server.conf`, configures deployment-only kernel networking,
+  writes the systemd service, enables the service, and prints the generated
+  connection details.
 - `snell-upgrade.sh`: upgrade script for an existing repo-managed install. It
   checks that the binary, config, and service already exist, downloads the latest
   configured Snell binary, replaces `/usr/local/bin/snell-server`, and restarts
@@ -62,7 +65,8 @@ bash -n snell-migrate.sh
 
 For behavior testing, use an isolated Linux VM/container with systemd or a
 purpose-built test harness. Be careful: the scripts intentionally write to
-`/usr/local/bin`, `/etc/snell`, and `/etc/systemd/system`.
+`/usr/local/bin`, `/etc/snell`, and `/etc/systemd/system`; deployment also
+writes `/etc/sysctl.d/99-snell-network.conf`.
 
 ## Coding Style
 
@@ -93,6 +97,9 @@ Keep the existing Bash style unless there is a strong reason to change it:
 - The service path is `/etc/systemd/system/snell-server.service`.
 - New deployments generate a random port in the inclusive range `10000-40000`.
 - New deployments generate a 32-character alphanumeric PSK from `/dev/urandom`.
+- New deployments ensure `net.core.default_qdisc=fq`,
+  `net.ipv4.tcp_congestion_control=bbr`, and `net.ipv4.tcp_fastopen=3`, and
+  persist them in `/etc/sysctl.d/99-snell-network.conf`.
 - The Snell config contains sensitive PSK material; keep permissions at `600`
   and avoid adding logs or debug output that expose secrets unnecessarily.
 - The systemd hardening settings currently expected by this repo are:

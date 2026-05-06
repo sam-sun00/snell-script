@@ -12,6 +12,7 @@ SNELL_BIN="/usr/local/bin/snell-server"
 SNELL_CONF_DIR="/etc/snell"
 SNELL_CONF="$SNELL_CONF_DIR/snell-server.conf"
 SNELL_SERVICE="/etc/systemd/system/snell-server.service"
+SYSCTL_CONF="/etc/sysctl.d/99-snell-network.conf"
 MIN_PORT=10000
 MAX_PORT=40000
 PORT_ARG=""
@@ -116,6 +117,76 @@ cleanup() {
     [[ -n "$WORKDIR" && -d "$WORKDIR" ]] && rm -rf "$WORKDIR"
 }
 
+ensure_tcp_bbr_available() {
+    local available
+
+    available="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null)" \
+        || error "Failed to read available TCP congestion controls."
+
+    if [[ " $available " == *" bbr "* ]]; then
+        return
+    fi
+
+    command -v modprobe >/dev/null 2>&1 \
+        || error "BBR is not available and modprobe was not found."
+
+    info "Loading tcp_bbr kernel module..."
+    modprobe tcp_bbr \
+        || error "Failed to load tcp_bbr kernel module."
+
+    available="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null)" \
+        || error "Failed to read available TCP congestion controls."
+
+    [[ " $available " == *" bbr "* ]] \
+        || error "BBR is not available on this kernel."
+}
+
+ensure_sysctl_value() {
+    local key="$1"
+    local desired="$2"
+    local current
+
+    current="$(sysctl -n "$key" 2>/dev/null)" \
+        || error "Failed to read sysctl value for $key."
+
+    if [[ "$current" == "$desired" ]]; then
+        info "$key already set to $desired."
+        return
+    fi
+
+    info "Setting $key from $current to $desired..."
+    sysctl -w "$key=$desired" >/dev/null \
+        || error "Failed to set $key to $desired."
+}
+
+ensure_sysctl_config() {
+    if [[ -f "$SYSCTL_CONF" ]] \
+        && grep -Eq '^[[:space:]]*net\.core\.default_qdisc[[:space:]]*=[[:space:]]*fq([[:space:]]*(#.*)?)?$' "$SYSCTL_CONF" \
+        && grep -Eq '^[[:space:]]*net\.ipv4\.tcp_congestion_control[[:space:]]*=[[:space:]]*bbr([[:space:]]*(#.*)?)?$' "$SYSCTL_CONF" \
+        && grep -Eq '^[[:space:]]*net\.ipv4\.tcp_fastopen[[:space:]]*=[[:space:]]*3([[:space:]]*(#.*)?)?$' "$SYSCTL_CONF"; then
+        info "Persistent kernel networking settings already set in $SYSCTL_CONF."
+        return
+    fi
+
+    info "Writing persistent kernel networking settings to $SYSCTL_CONF..."
+    cat > "$SYSCTL_CONF" <<EOF
+# Managed by snell-deploy.sh
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.ipv4.tcp_fastopen = 3
+EOF
+    chmod 644 "$SYSCTL_CONF"
+}
+
+ensure_kernel_networking() {
+    info "Configuring kernel networking with BBR, fq, and TCP Fast Open..."
+    ensure_tcp_bbr_available
+    ensure_sysctl_value "net.core.default_qdisc" "fq"
+    ensure_sysctl_value "net.ipv4.tcp_congestion_control" "bbr"
+    ensure_sysctl_value "net.ipv4.tcp_fastopen" "3"
+    ensure_sysctl_config
+}
+
 parse_args "$@"
 trap cleanup EXIT
 
@@ -125,9 +196,12 @@ trap cleanup EXIT
 # --- Step 1: Install dependencies --------------------------------------------
 info "Installing required packages..."
 apt-get update -qq
-apt-get install -y -qq unzip wget curl
+apt-get install -y -qq unzip wget curl procps kmod
 
-# --- Step 2: Download --------------------------------------------------------
+# --- Step 2: Configure kernel networking --------------------------------------
+ensure_kernel_networking
+
+# --- Step 3: Download --------------------------------------------------------
 SNELL_VERSION="$(fetch_latest_version)"
 SNELL_ZIP="snell-server-${SNELL_VERSION}-linux-amd64.zip"
 SNELL_URL="${SNELL_DOWNLOAD_BASE_URL}/${SNELL_ZIP}"
@@ -139,11 +213,11 @@ wget --no-check-certificate -q --show-progress \
     "$SNELL_URL" \
     || error "Download failed. Check the URL or network connectivity."
 
-# --- Step 3: Extract ---------------------------------------------------------
+# --- Step 4: Extract ---------------------------------------------------------
 info "Extracting archive..."
 unzip -q "$WORKDIR/$SNELL_ZIP" -d "$WORKDIR"
 
-# --- Step 4: Install binary --------------------------------------------------
+# --- Step 5: Install binary --------------------------------------------------
 info "Installing snell-server to $SNELL_BIN..."
 [[ -f "$WORKDIR/snell-server" ]] \
     || error "snell-server binary not found in archive. Check the zip contents."
@@ -154,7 +228,7 @@ cleanup
 WORKDIR=""
 info "Cleaned up temporary files."
 
-# --- Step 5: Write config ----------------------------------------------------
+# --- Step 6: Write config ----------------------------------------------------
 SNELL_PORT="${PORT_ARG:-$(generate_port)}"
 SNELL_PSK="$(generate_psk)"
 
@@ -168,7 +242,7 @@ ipv6 = true
 EOF
 chmod 600 "$SNELL_CONF"   # psk is sensitive — restrict read access
 
-# --- Step 6: Write systemd unit ----------------------------------------------
+# --- Step 7: Write systemd unit ----------------------------------------------
 info "Creating systemd service at $SNELL_SERVICE..."
 cat > "$SNELL_SERVICE" <<'EOF'
 [Unit]
@@ -189,7 +263,7 @@ ReadWritePaths=/etc/snell
 WantedBy=multi-user.target
 EOF
 
-# --- Step 7: Enable and start ------------------------------------------------
+# --- Step 8: Enable and start ------------------------------------------------
 info "Reloading systemd and enabling snell-server..."
 systemctl daemon-reload
 systemctl enable --now snell-server
