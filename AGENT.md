@@ -3,9 +3,29 @@
 This repository contains Bash scripts for deploying, upgrading, and migrating a
 Snell server installation on a Linux host that uses `apt` and `systemd`.
 
-At the time this file was written, there were no project-local chat transcript,
-history, or MCP resource files exposed in the workspace. These notes are based on
-the files in this repository and the visible git history.
+Additional project conversation context is kept in `Agent-Chat-History.md`. Use
+that file when reconstructing why the scripts were added or changed.
+
+## Project History Context
+
+- The original deployment workflow was manual: install dependencies, download a
+  Snell zip, unzip it, keep only the `snell-server` binary, move it to
+  `/usr/local/bin`, then hand-write the config and systemd unit.
+- The first deployment script intentionally improved that manual workflow with a
+  temp working directory, `install -m 755`, binary existence checks, config mode
+  `600`, colored logs, a service health check, and systemd hardening.
+- `snell-deploy.sh` later moved from fixed config values to generated
+  credentials: a fresh 32-character alphanumeric PSK and either a random port in
+  `10000-40000` or the port supplied by `-p/--port`.
+- Deployment and upgrade were changed to derive the Snell archive name from the
+  repo's `version` endpoint rather than hardcoding a single versioned zip URL.
+- `snell-upgrade.sh` was added for existing script-managed installations. It
+  intentionally checks for an existing binary, config, and service before
+  replacing only the binary, then reloads systemd and restarts the service.
+- `snell-migrate.sh` was added after discussing older manual installs. The goal
+  is adoption and hardening, not redeployment: preserve the existing binary,
+  port, PSK, and custom unit content where possible, while normalizing config
+  permissions and desired hardening directives.
 
 ## Repository Layout
 
